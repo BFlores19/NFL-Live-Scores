@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NFL Live Scores</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; }
+      .row { display: flex; justify-content: space-between; }
+      .muted { color: #666; font-size: 0.9em; }
+      button { padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    </style>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  </head>
+  <body>
+    <h1>NFL Live Scores (ESPN)</h1>
+    <p class="muted">Data: ESPN public scoreboard • Auto-refresh every 10s</p>
+    <p><button hx-get="/api/scores" hx-target="#scores" hx-swap="innerHTML">Refresh now</button></p>
+
+    <div id="scores" class="grid" hx-get="/api/scores" hx-trigger="load, every 10s" hx-swap="innerHTML">
+      <!-- filled by script below -->
+    </div>
+
+    <template id="game-template">
+      <div class="card">
+        <div class="row"><strong class="away"></strong><span class="awayScore"></span></div>
+        <div class="row"><strong class="home"></strong><span class="homeScore"></span></div>
+        <div class="row muted"><span class="status"></span></div>
+      </div>
+    </template>
+
+    <script>
+      document.body.addEventListener('htmx:afterSwap', (e) => {
+        if (e.target.id !== 'scores') return;
+        try {
+          const payload = JSON.parse(e.detail.xhr.response);
+          const list = document.getElementById('scores');
+          list.innerHTML = '';
+          const tmpl = document.getElementById('game-template');
+          (payload.games || []).forEach(g => {
+            const node = tmpl.content.cloneNode(true);
+            node.querySelector('.away').textContent = g.away;
+            node.querySelector('.home').textContent = g.home;
+            node.querySelector('.awayScore').textContent = g.awayScore;
+            node.querySelector('.homeScore').textContent = g.homeScore;
+            node.querySelector('.status').textContent = g.status;
+            list.appendChild(node);
+          });
+        } catch (_) { /* ignore if backend returns HTML in future */ }
+      });
+    </script>
+  </body>
+</html>
