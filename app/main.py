@@ -16,9 +16,9 @@ def health():
     return {"ok": True, "time": datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/scores")
-async def scores(date: str | None = None):
-    # optional ?date=YYYYMMDD
-    if date and (len(date) != 8 or not date.isdigit()):
-        raise HTTPException(status_code=400, detail="date must be YYYYMMDD")
-    data = await get_scores_cached(date)
+async def scores(year: int | None = None, week: int | None = None, seasontype: int | None = None):
+    # seasontype: 1 = Preseason, 2 = Regular, 3 = Postseason
+    if seasontype and seasontype not in (1, 2, 3):
+        raise HTTPException(status_code=400, detail="seasontype must be 1, 2, or 3")
+    data = await get_scores_cached(year=year, week=week, seasontype=seasontype)
     return JSONResponse(data)

@@ -2,54 +2,224 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>NFL Live Scores</title>
+    <title>NFL Live Scores (ESPN)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: system-ui, sans-serif; margin: 24px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; }
-      .row { display: flex; justify-content: space-between; }
+      h1 { margin-bottom: 4px; }
       .muted { color: #666; font-size: 0.9em; }
-      button { padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      select, button { padding: 6px 10px; border-radius: 6px; }
+      #scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+      .card strong { font-size: 1.1em; }
+      .row { display: flex; justify-content: space-between; }
+      .tba { text-align:center; padding: 24px; border: 1px dashed #bbb; border-radius: 10px; grid-column: 1 / -1; }
     </style>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   </head>
   <body>
     <h1>NFL Live Scores (ESPN)</h1>
-    <p class="muted">Data: ESPN public scoreboard • Auto-refresh every 10s</p>
-    <p><button hx-get="/api/scores" hx-target="#scores" hx-swap="innerHTML">Refresh now</button></p>
+    <div class="muted">Data: ESPN public scoreboard • Auto-refresh every 10s</div>
 
-    <div id="scores" class="grid" hx-get="/api/scores" hx-trigger="load, every 10s" hx-swap="innerHTML">
-      <!-- filled by script below -->
+    <!-- Week/Year/Season controls (week selector above Refresh) -->
+    <div class="controls">
+      <label>
+        <span class="muted">Season Type</span><br>
+        <select id="seasontype">
+          <option value="1">Preseason</option>
+          <option value="2" selected>Regular</option>
+          <option value="3">Postseason</option>
+        </select>
+      </label>
+      <label>
+        <span class="muted">Year</span><br>
+        <select id="year"></select>
+      </label>
+      <label>
+        <span class="muted">Week</span><br>
+        <select id="week"></select>
+      </label>
+      <button id="loadBtn">Load Week</button>
     </div>
+
+    <!-- Refresh -->
+    <button id="refreshBtn">Refresh now</button>
+
+    <!-- Scores -->
+    <div id="scores"></div>
 
     <template id="game-template">
       <div class="card">
         <div class="row"><strong class="away"></strong><span class="awayScore"></span></div>
         <div class="row"><strong class="home"></strong><span class="homeScore"></span></div>
-        <div class="row muted"><span class="status"></span></div>
+        <div class="muted status"></div>
       </div>
     </template>
 
     <script>
-      document.body.addEventListener('htmx:afterSwap', (e) => {
-        if (e.target.id !== 'scores') return;
+      const scoresDiv = document.getElementById('scores');
+      const refreshBtn = document.getElementById('refreshBtn');
+      const loadBtn = document.getElementById('loadBtn');
+      const yearSel = document.getElementById('year');
+      const weekSel = document.getElementById('week');
+      const typeSel = document.getElementById('seasontype');
+
+      // Populate year: current-1 .. current+1
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        if (y === currentYear) opt.selected = true;
+        yearSel.appendChild(opt);
+      }
+
+      // Fill week options by count
+      function fillWeeks(count) {
+        weekSel.innerHTML = '';
+        for (let w = 1; w <= count; w++) {
+          const opt = document.createElement('option');
+          opt.value = String(w);
+          opt.textContent = String(w);
+          weekSel.appendChild(opt);
+        }
+      }
+
+      // Map: preseason=3 weeks, regular=18 weeks, postseason=TBA (no weeks)
+      function applySeasonWeekLimits() {
+        const st = Number(typeSel.value);
+        weekSel.innerHTML = '';
+        let start, end;
+  
+        if (st === 1) {        // Preseason: weeks 1-3
+          start = 1; end = 3;
+        }else if (st === 2) { // Regular: weeks 4-21
+          start = 4; end = 21;
+        } else {               // Postseason: weeks 22+
+          weekSel.innerHTML = '';
+          return; // Will be handled as TBA
+        }
+
+        for (let w = start; w <= end; w++) {
+          const opt = document.createElement('option');
+          opt.value = String(w);
+          opt.textContent = String(w);
+          weekSel.appendChild(opt);
+        }
+      }
+      
+
+      applySeasonWeekLimits();
+
+      async function fetchJSON(url) {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }
+
+      function renderScores(payload) {
+        scoresDiv.innerHTML = '';
+        const tmpl = document.getElementById('game-template');
+        (payload.games || []).forEach(g => {
+          const node = tmpl.content.cloneNode(true);
+          node.querySelector('.away').textContent = g.away;
+          node.querySelector('.home').textContent = g.home;
+          node.querySelector('.awayScore').textContent = g.awayScore ?? '—';
+          node.querySelector('.homeScore').textContent = g.homeScore ?? '—';
+          node.querySelector('.status').textContent = g.status;
+          scoresDiv.appendChild(node);
+        });
+      }
+
+      function renderTBA() {
+        scoresDiv.innerHTML = '';
+        const div = document.createElement('div');
+        div.className = 'tba';
+        div.textContent = 'Postseason schedule: TBA';
+        scoresDiv.appendChild(div);
+      }
+
+      async function loadWeek(params) {
+        // Postseason = TBA page, skip API call
+        if (Number(params.seasontype) === 3) {
+          renderTBA();
+          return;
+        }
+        const qs = new URLSearchParams(params);
+        const url = '/api/scores' + (qs.toString() ? `?${qs}` : '');
+        const data = await fetchJSON(url);
+        renderScores(data);
+      }
+
+      // Init: default to ESPN's *current* overall week,
+      // then map it to your season-type ranges:
+      // Pre (1–3), Regular (4–21), Post (22+ = TBA)
+      async function init() {
         try {
-          const payload = JSON.parse(e.detail.xhr.response);
-          const list = document.getElementById('scores');
-          list.innerHTML = '';
-          const tmpl = document.getElementById('game-template');
-          (payload.games || []).forEach(g => {
-            const node = tmpl.content.cloneNode(true);
-            node.querySelector('.away').textContent = g.away;
-            node.querySelector('.home').textContent = g.home;
-            node.querySelector('.awayScore').textContent = g.awayScore;
-            node.querySelector('.homeScore').textContent = g.homeScore;
-            node.querySelector('.status').textContent = g.status;
-            list.appendChild(node);
-          });
-        } catch (_) { /* ignore if backend returns HTML in future */ }
+          const meta = await fetchJSON('/api/weekmeta'); // { year, week, seasontype } (week is overall)
+          let year = Number(meta?.year) || new Date().getUTCFullYear();
+          let week = Number(meta?.week) || 4; // sane default
+          let st; // 1=Pre, 2=Reg, 3=Post
+
+          if (week <= 3) st = 1;
+          else if (week <= 21) st = 2;
+          else st = 3;
+
+          // Set selectors then apply week limits
+          yearSel.value = String(year);
+          typeSel.value = String(st);
+          applySeasonWeekLimits(); // rebuild week options based on season type
+
+          if (st === 3) { // Postseason => TBA page, no API call
+            renderTBA();
+            return;
+          }
+
+          // Clamp the detected week into the allowed range for the selected season
+          if (st === 1) week = Math.min(Math.max(week, 1), 3);
+          if (st === 2) week = Math.min(Math.max(week, 4), 21);
+          weekSel.value = String(week);
+
+          await loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value });
+        } catch (e) {
+          console.error(e);
+          // Fallback: Regular season week 4 of current year
+          typeSel.value = '2';
+          applySeasonWeekLimits();
+          yearSel.value = String(new Date().getUTCFullYear());
+          weekSel.value = '4';
+          await loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value }).catch(console.error);
+        }
+      }
+
+
+      // Events
+      typeSel.addEventListener('change', () => {
+        applySeasonWeekLimits();
+        // If postseason selected, immediately show TBA; else load week 1 by default
+        if (Number(typeSel.value) === 3) {
+          renderTBA();
+        } else {
+          weekSel.value = weekSel.value || '1';
+          loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value }).catch(console.error);
+        }
       });
+
+      loadBtn.addEventListener('click', () => {
+        loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value }).catch(console.error);
+      });
+
+      refreshBtn.addEventListener('click', () => {
+        loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value }).catch(console.error);
+      });
+
+      // Auto refresh every 10s (no-op in postseason)
+      setInterval(() => {
+        loadWeek({ year: yearSel.value, seasontype: typeSel.value, week: weekSel.value }).catch(() => {});
+      }, 10000);
+
+      init();
     </script>
   </body>
 </html>
