@@ -17,11 +17,15 @@ CORE_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl"
 
 # ----------------------------- Public fetch -----------------------------
 
-async def fetch_summary(event_id: str) -> dict:
-    async with httpx.AsyncClient(timeout=12) as client:
-        r = await client.get(SUMMARY_URL, params={"event": event_id})
-        r.raise_for_status()
-        return r.json()
+async def fetch_summary(event_id: str, session: Optional[aiohttp.ClientSession] = None) -> dict:
+    """Fetch the ESPN summary/boxscore for a given event."""
+    url = f"https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={event_id}"
+    async with (session or aiohttp.ClientSession()) as sess:
+        async with sess.get(url) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"ESPN summary fetch failed with status {resp.status}")
+            return await resp.json()
+
 
 
 # ----------------------------- HTML boxscore scraper -----------------------------

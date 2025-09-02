@@ -7,7 +7,9 @@
     <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Font: Black Ops One -->
-    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" rel="stylesheet">
+    <link 
+href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" 
+rel="stylesheet">
     <style>
       .font-title { font-family: 'Black Ops One', cursive; }
     </style>
@@ -45,11 +47,8 @@
         </div>
       </section>
 
-      <!-- Refresh + context pill -->
+      <!-- Context pill (no separate refresh button) -->
       <section class="flex items-center justify-between mb-4">
-        <button id="refreshBtn" class="inline-flex items-center rounded-lg bg-[#0B162A] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-black focus:outline-none focus:ring-2 focus:ring-[#0B162A]">
-          Refresh now
-        </button>
         <span id="contextPill" class="text-xs rounded-full bg-slate-200 px-3 py-1 text-slate-700">Loading…</span>
       </section>
 
@@ -104,7 +103,6 @@
 
     <script>
       const scoresDiv = document.getElementById('scores');
-      const refreshBtn = document.getElementById('refreshBtn');
       const loadBtn = document.getElementById('loadBtn');
       const yearSel = document.getElementById('year');
       const weekSel = document.getElementById('week');
@@ -182,7 +180,6 @@
             list.appendChild(li);
           });
         };
-
         try {
           setStatus('saving');
           await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/save`, { method: 'POST' });
@@ -229,18 +226,15 @@
       function renderScores(payload, onlyTop=false) {
         scoresDiv.innerHTML = '';
         const tmpl = document.getElementById('game-template');
-
         (payload.games || []).forEach(g => {
           const node = tmpl.content.cloneNode(true);
           const card = node.querySelector('div.rounded-xl');
-
           node.querySelector('.away').textContent = g.away;
           node.querySelector('.home').textContent = g.home;
           node.querySelector('.awayScore').textContent = g.awayScore ?? '—';
           node.querySelector('.homeScore').textContent = g.homeScore ?? '—';
           if (g.awayLogo) node.querySelector('.awayLogo').src = g.awayLogo;
           if (g.homeLogo) node.querySelector('.homeLogo').src = g.homeLogo;
-
           const statusEl = node.querySelector('.status');
           statusEl.textContent = g.status;
           const sl = (g.status||'').toLowerCase();
@@ -253,10 +247,8 @@
           } else if (sl.includes('final')) {
             card.classList.add('bg-gray-50', 'ring-gray-200');
           }
-
           scoresDiv.appendChild(node);
           const insertedCard = scoresDiv.lastElementChild;
-
           if (onlyTop) {
             enqueueFantasy(() => loadTopOnlyForCard(g.id, insertedCard));
           } else {
@@ -276,6 +268,8 @@
 
       // ----------------- Week Loader -----------------
       let currentMeta = {year: currentYear, week: 4};
+      let currentLoadKey = '';
+      let firstLoadDone = false;
       async function getWeekMeta() {
         try { currentMeta = await fetchJSON('/api/weekmeta'); }
         catch {}
@@ -286,9 +280,13 @@
         if (y > currentMeta.year) return false;
         return w < currentMeta.week;
       }
-
       async function loadWeek(params) {
         if (Number(params.seasontype) === 3) { renderTBA(); return; }
+        const key = `${params.year}-${params.seasontype}-${params.week}`;
+        if (key !== currentLoadKey) {
+          currentLoadKey = key;
+          firstLoadDone = false;
+        }
         const qs = new URLSearchParams(params);
         const data = await fetchJSON('/api/scores?' + qs.toString());
         const past = isPastSelection(params.year, params.week);
@@ -297,7 +295,11 @@
             await fetchJSON(`/api/weeks/${params.year}/${params.week}/ingest?score=true`, {method:'POST'});
           } catch {}
         }
-        renderScores(data, past);
+        const useOnlyTop = past || firstLoadDone;
+        renderScores(data, useOnlyTop);
+        if (!past && !firstLoadDone) {
+          firstLoadDone = true;
+        }
         pill.textContent = `${params.seasontype==1?'Pre':'Reg'} • Week ${params.week} • ${params.year}`;
       }
 
@@ -323,12 +325,19 @@
           await loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});
         }
       }
-
-      typeSel.addEventListener('change', ()=>{applySeasonWeekLimits(); if(Number(typeSel.value)===3) renderTBA(); else loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});});
+      typeSel.addEventListener('change', ()=>{
+        applySeasonWeekLimits();
+        if(Number(typeSel.value)===3) renderTBA(); else loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});
+      });
       loadBtn.addEventListener('click', ()=>loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value}));
-      refreshBtn.addEventListener('click', ()=>loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value}));
-      setInterval(()=>{ if(Number(typeSel.value)!==3) loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value}); },10000);
-
+      // Auto-refresh now respects firstLoadDone: only reload top performers when not recomputing
+      setInterval(() => {
+        if(Number(typeSel.value)!==3) {
+          const params = {year: yearSel.value, seasontype: typeSel.value, week: weekSel.value};
+          // Do not reset firstLoadDone; treat auto refresh as subsequent refreshes
+          loadWeek(params);
+        }
+      }, 10000);
       init();
     </script>
   </body>
