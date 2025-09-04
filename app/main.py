@@ -138,16 +138,40 @@ async def save_game(event_id: str, db: Session = Depends(get_db)):
     summary = await fetch_summary(event_id)
     comp0 = _extract_safe(summary, "header", "competitions", 0, default={}) or {}
     competitors = comp0.get("competitors") or []
+    # Fallback: if the ESPN summary does not include the expected `competitors`
+    # array (this happens for older or preseason games), use the boxscore
+    # structure instead.  The `boxscore.teams` list contains two entries
+    # corresponding to the home and away teams, each with a `team` object and
+    # `homeAway` flag.  Construct a competitors-like list from this data so
+    # downstream logic can proceed without raising an error.
     if len(competitors) != 2:
-        raise HTTPException(400, detail="Unexpected ESPN payload: missing competitors")
+        box_teams = _extract_safe(summary, "boxscore", "teams", default=[])
+        competitors = []
+        for t in box_teams:
+            team_obj = t.get("team") or {}
+            competitor = {
+                "team": team_obj,
+                "homeAway": t.get("homeAway"),
+                # `boxscore.teams` does not include a final score; include if present
+                "score": t.get("score"),
+            }
+            competitors.append(competitor)
+        # Require exactly two teams after fallback; otherwise the payload is unusable.
+        if len(competitors) != 2:
+            raise HTTPException(400, detail="Unexpected ESPN payload: missing competitors")
 
     kickoff_iso = comp0.get("date") or _extract_safe(summary, "header", "competitions", 0, "date")
+    # If the kickoff date is missing (common for preseason or old games), fall
+    # back to the current time so the game can still be ingested.  Invalid
+    # formats similarly fall back to now.  This avoids raising an exception
+    # and leaving the game unsaved.
     if not kickoff_iso:
-        raise HTTPException(400, detail="Missing kickoff date in ESPN payload")
-    try:
-        kickoff_dt = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
-    except Exception:
-        raise HTTPException(400, detail="Invalid kickoff datetime format from ESPN")
+        kickoff_dt = datetime.now(timezone.utc)
+    else:
+        try:
+            kickoff_dt = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+        except Exception:
+            kickoff_dt = datetime.now(timezone.utc)
 
     venue_name = (
         _extract_safe(comp0, "venue", "fullName")
@@ -304,12 +328,29 @@ async def _save_game_internal(event_id: str, db: Session):
     summary = await fetch_summary(event_id)
     comp0 = _extract_safe(summary, "header", "competitions", 0, default={}) or {}
     competitors = comp0.get("competitors") or []
+    # Fallback: derive competitors from boxscore teams when missing.
     if len(competitors) != 2:
-        raise HTTPException(400, detail=f"Unexpected ESPN payload for {event_id}: missing competitors")
+        box_teams = _extract_safe(summary, "boxscore", "teams", default=[])
+        competitors = []
+        for t in box_teams:
+            team_obj = t.get("team") or {}
+            competitor = {
+                "team": team_obj,
+                "homeAway": t.get("homeAway"),
+                "score": t.get("score"),
+            }
+            competitors.append(competitor)
+        if len(competitors) != 2:
+            raise HTTPException(400, detail=f"Unexpected ESPN payload for {event_id}: missing competitors")
     kickoff_iso = comp0.get("date") or _extract_safe(summary, "header", "competitions", 0, "date")
+    # Use current time as fallback when kickoff is missing or malformed.
     if not kickoff_iso:
-        raise HTTPException(400, detail=f"Missing kickoff date for {event_id}")
-    kickoff_dt = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+        kickoff_dt = datetime.now(timezone.utc)
+    else:
+        try:
+            kickoff_dt = datetime.fromisoformat(kickoff_iso.replace("Z", "+00:00"))
+        except Exception:
+            kickoff_dt = datetime.now(timezone.utc)
     venue_name = (
         _extract_safe(comp0, "venue", "fullName")
         or _extract_safe(summary, "gameInfo", "venue", "fullName")

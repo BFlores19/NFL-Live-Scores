@@ -213,7 +213,20 @@ rel="stylesheet">
         };
         try {
           setStatus('loading');
-          const top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+          let top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+          // If there are no top performers yet (likely because the game has not been scored),
+          // try to compute the fantasy data on the fly. This ensures past games with no
+          // precomputed data still display top performers instead of an empty list.
+          if (!top || !top.top || top.top.length === 0) {
+            try {
+              // Save and score the game to populate player performances
+              await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/save`, { method: 'POST' });
+              await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/fullppr`, { method: 'POST' });
+              top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+            } catch (err) {
+              // Suppress any errors during the fallback scoring; the empty top list will be handled below.
+            }
+          }
           setList(top?.top || []);
           setStatus('');
         } catch (e) {

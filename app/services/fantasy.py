@@ -4,7 +4,8 @@ from __future__ import annotations
 import re
 import json
 import httpx
-from typing import Any, Dict, Iterable, Tuple, AsyncGenerator
+from typing import Any, Dict, Iterable, Tuple, AsyncGenerator, Optional
+import aiohttp
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
