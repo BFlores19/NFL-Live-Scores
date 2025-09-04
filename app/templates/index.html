@@ -1,55 +1,357 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>NFL Live Scores</title>
+    <title>NFL Live Scores (ESPN)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font: Black Ops One -->
+    <link 
+href="https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap" 
+rel="stylesheet">
     <style>
-      body { font-family: system-ui, sans-serif; margin: 24px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; }
-      .row { display: flex; justify-content: space-between; }
-      .muted { color: #666; font-size: 0.9em; }
-      button { padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+      .font-title { font-family: 'Black Ops One', cursive; }
     </style>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   </head>
-  <body>
-    <h1>NFL Live Scores (ESPN)</h1>
-    <p class="muted">Data: ESPN public scoreboard • Auto-refresh every 10s</p>
-    <p><button hx-get="/api/scores" hx-target="#scores" hx-swap="innerHTML">Refresh now</button></p>
+  <body class="bg-slate-50 text-slate-900">
+    <main class="max-w-5xl mx-auto p-4 sm:p-6">
+      <!-- Header -->
+      <header class="mb-6 bg-[#0B162A] p-4 rounded-lg shadow-md">
+        <h1 class="text-3xl sm:text-4xl font-title text-white tracking-wide">NFL Live Scores</h1>
+        <p class="text-blue-100 text-sm">Powered by ESPN • Auto-refresh every 10s</p>
+      </header>
 
-    <div id="scores" class="grid" hx-get="/api/scores" hx-trigger="load, every 10s" hx-swap="innerHTML">
-      <!-- filled by script below -->
-    </div>
+      <!-- Controls -->
+      <section class="mb-3">
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="flex flex-col">
+            <span class="text-xs uppercase tracking-wide text-slate-500">Season Type</span>
+            <select id="seasontype" class="mt-1 rounded-lg border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C60C30]">
+              <option value="1">Preseason</option>
+              <option value="2" selected>Regular</option>
+              <option value="3">Postseason</option>
+            </select>
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs uppercase tracking-wide text-slate-500">Year</span>
+            <select id="year" class="mt-1 rounded-lg border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C60C30]"></select>
+          </label>
+          <label class="flex flex-col">
+            <span class="text-xs uppercase tracking-wide text-slate-500">Week</span>
+            <select id="week" class="mt-1 rounded-lg border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#C60C30]"></select>
+          </label>
+          <button id="loadBtn" class="ml-auto inline-flex items-center rounded-lg bg-[#C60C30] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-[#C60C30]">
+            Load Week
+          </button>
+        </div>
+      </section>
 
+      <!-- Context pill (no separate refresh button) -->
+      <section class="flex items-center justify-between mb-4">
+        <span id="contextPill" class="text-xs rounded-full bg-slate-200 px-3 py-1 text-slate-700">Loading…</span>
+      </section>
+
+      <!-- Score grid -->
+      <section id="scores" class="grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+        <!-- Cards injected here -->
+      </section>
+    </main>
+
+    <!-- Card template -->
     <template id="game-template">
-      <div class="card">
-        <div class="row"><strong class="away"></strong><span class="awayScore"></span></div>
-        <div class="row"><strong class="home"></strong><span class="homeScore"></span></div>
-        <div class="row muted"><span class="status"></span></div>
+      <div class="rounded-xl shadow-sm ring-1 p-4 transition-colors bg-white ring-slate-200">
+        <div class="flex items-center justify-between mb-1">
+          <div class="flex items-center gap-2">
+            <img class="awayLogo w-6 h-6 rounded-full ring-1 ring-slate-300" alt="" />
+            <strong class="away text-sm sm:text-base"></strong>
+          </div>
+          <span class="awayScore text-lg font-bold tabular-nums"></span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <img class="homeLogo w-6 h-6 rounded-full ring-1 ring-slate-300" alt="" />
+            <strong class="home text-sm sm:text-base"></strong>
+          </div>
+          <span class="homeScore text-lg font-bold tabular-nums"></span>
+        </div>
+        <div class="mt-2 flex items-center gap-2 text-xs statusWrap">
+          <span class="status"></span>
+        </div>
+
+        <!-- Fantasy drawer -->
+        <div class="fantasyDrawer mt-3">
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+              Top Fantasy (Full-PPR)
+              <span class="fantasyStatus ml-2 text-[11px] text-slate-400"></span>
+            </div>
+            <ul class="fantasyList text-sm space-y-1">
+              <li class="text-slate-400">Loading…</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- TBA template -->
+    <template id="tba-template">
+      <div class="col-span-full rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 text-center text-slate-600">
+        Postseason schedule: TBA
       </div>
     </template>
 
     <script>
-      document.body.addEventListener('htmx:afterSwap', (e) => {
-        if (e.target.id !== 'scores') return;
-        try {
-          const payload = JSON.parse(e.detail.xhr.response);
-          const list = document.getElementById('scores');
+      const scoresDiv = document.getElementById('scores');
+      const loadBtn = document.getElementById('loadBtn');
+      const yearSel = document.getElementById('year');
+      const weekSel = document.getElementById('week');
+      const typeSel = document.getElementById('seasontype');
+      const pill = document.getElementById('contextPill');
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+
+      // Build year options
+      for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        if (y === currentYear) opt.selected = true;
+        yearSel.appendChild(opt);
+      }
+
+      function applySeasonWeekLimits() {
+        const st = Number(typeSel.value);
+        weekSel.innerHTML = '';
+        let start, end;
+        if (st === 1) { start = 1; end = 3; }
+        else if (st === 2) { start = 4; end = 21; }
+        else { renderTBA(); return; }
+        for (let w = start; w <= end; w++) {
+          const opt = document.createElement('option');
+          opt.value = String(w);
+          opt.textContent = String(w);
+          weekSel.appendChild(opt);
+        }
+      }
+
+      async function fetchJSON(url, opts) {
+        const r = await fetch(url, opts);
+        if (!r.ok) {
+          let msg = `HTTP ${r.status}`;
+          try { const j = await r.json(); if (j.detail) msg += ` • ${j.detail}`; } catch {}
+          throw new Error(msg);
+        }
+        return r.headers.get('content-type')?.includes('application/json') ? r.json() : r.text();
+      }
+
+      // Lightweight queue (fantasy loads)
+      const fantasyQueue = [];
+      let running = 0;
+      const MAX_CONCURRENT = 3;
+      async function enqueueFantasy(task) {
+        fantasyQueue.push(task);
+        pumpFantasy();
+      }
+      async function pumpFantasy() {
+        if (running >= MAX_CONCURRENT) return;
+        const next = fantasyQueue.shift();
+        if (!next) return;
+        running++;
+        try { await next(); } catch {}
+        running--;
+        if (fantasyQueue.length) pumpFantasy();
+      }
+
+      // ----------------- Fantasy loaders -----------------
+      async function loadFantasyForCard(gameId, cardEl) {
+        const statusEl = cardEl.querySelector('.fantasyStatus');
+        const list = cardEl.querySelector('.fantasyList');
+        const setStatus = (t) => statusEl.textContent = t || '';
+        const setList = (items) => {
           list.innerHTML = '';
-          const tmpl = document.getElementById('game-template');
-          (payload.games || []).forEach(g => {
-            const node = tmpl.content.cloneNode(true);
-            node.querySelector('.away').textContent = g.away;
-            node.querySelector('.home').textContent = g.home;
-            node.querySelector('.awayScore').textContent = g.awayScore;
-            node.querySelector('.homeScore').textContent = g.homeScore;
-            node.querySelector('.status').textContent = g.status;
-            list.appendChild(node);
+          if (!items || !items.length) {
+            list.innerHTML = '<li class="text-slate-500">No data yet.</li>';
+            return;
+          }
+          items.forEach((r, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="tabular-nums mr-1">${idx+1}.</span> <strong>${r.player}</strong> <span class="text-xs text-slate-500">(${r.team || ''} ${r.pos ? '• '+r.pos : ''})</span> — <span class="font-semibold">${r.points}</span>`;
+            list.appendChild(li);
           });
-        } catch (_) { /* ignore if backend returns HTML in future */ }
+        };
+        try {
+          setStatus('saving');
+          await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/save`, { method: 'POST' });
+          setStatus('scoring');
+          await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/fullppr`, { method: 'POST' });
+          setStatus('loading');
+          const top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+          setList(top?.top || []);
+          setStatus('');
+        } catch (e) {
+          setList(null);
+          setStatus('error');
+        }
+      }
+
+      async function loadTopOnlyForCard(gameId, cardEl) {
+        const statusEl = cardEl.querySelector('.fantasyStatus');
+        const list = cardEl.querySelector('.fantasyList');
+        const setStatus = (t) => statusEl.textContent = t || '';
+        const setList = (items) => {
+          list.innerHTML = '';
+          if (!items || !items.length) {
+            list.innerHTML = '<li class="text-slate-500">No data yet.</li>';
+            return;
+          }
+          items.forEach((r, idx) => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="tabular-nums mr-1">${idx+1}.</span> <strong>${r.player}</strong> <span class="text-xs text-slate-500">(${r.team || ''} ${r.pos ? '• '+r.pos : ''})</span> — <span class="font-semibold">${r.points}</span>`;
+            list.appendChild(li);
+          });
+        };
+        try {
+          setStatus('loading');
+          let top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+          // If there are no top performers yet (likely because the game has not been scored),
+          // try to compute the fantasy data on the fly. This ensures past games with no
+          // precomputed data still display top performers instead of an empty list.
+          if (!top || !top.top || top.top.length === 0) {
+            try {
+              // Save and score the game to populate player performances
+              await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/save`, { method: 'POST' });
+              await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/fullppr`, { method: 'POST' });
+              top = await fetchJSON(`/api/games/${encodeURIComponent(gameId)}/fantasy/top?top=5`);
+            } catch (err) {
+              // Suppress any errors during the fallback scoring; the empty top list will be handled below.
+            }
+          }
+          setList(top?.top || []);
+          setStatus('');
+        } catch (e) {
+          setList(null);
+          setStatus('error');
+        }
+      }
+
+      // ----------------- Rendering -----------------
+      function renderScores(payload, onlyTop=false) {
+        scoresDiv.innerHTML = '';
+        const tmpl = document.getElementById('game-template');
+        (payload.games || []).forEach(g => {
+          const node = tmpl.content.cloneNode(true);
+          const card = node.querySelector('div.rounded-xl');
+          node.querySelector('.away').textContent = g.away;
+          node.querySelector('.home').textContent = g.home;
+          node.querySelector('.awayScore').textContent = g.awayScore ?? '—';
+          node.querySelector('.homeScore').textContent = g.homeScore ?? '—';
+          if (g.awayLogo) node.querySelector('.awayLogo').src = g.awayLogo;
+          if (g.homeLogo) node.querySelector('.homeLogo').src = g.homeLogo;
+          const statusEl = node.querySelector('.status');
+          statusEl.textContent = g.status;
+          const sl = (g.status||'').toLowerCase();
+          if (sl.includes('q') || sl.includes('live')) {
+            const dot = document.createElement('span');
+            dot.className = 'w-2 h-2 bg-red-500 rounded-full animate-pulse inline-block mr-1';
+            statusEl.prepend(dot);
+            statusEl.classList.add('font-semibold', 'text-red-600');
+            card.classList.add('bg-green-50', 'ring-green-200');
+          } else if (sl.includes('final')) {
+            card.classList.add('bg-gray-50', 'ring-gray-200');
+          }
+          scoresDiv.appendChild(node);
+          const insertedCard = scoresDiv.lastElementChild;
+          if (onlyTop) {
+            enqueueFantasy(() => loadTopOnlyForCard(g.id, insertedCard));
+          } else {
+            const isPre = sl.includes('pregame');
+            if (!isPre) enqueueFantasy(() => loadFantasyForCard(g.id, insertedCard));
+            else enqueueFantasy(() => loadTopOnlyForCard(g.id, insertedCard));
+          }
+        });
+      }
+
+      function renderTBA() {
+        scoresDiv.innerHTML = '';
+        const node = document.getElementById('tba-template').content.cloneNode(true);
+        scoresDiv.appendChild(node);
+        pill.textContent = 'Postseason • TBA';
+      }
+
+      // ----------------- Week Loader -----------------
+      let currentMeta = {year: currentYear, week: 4};
+      let currentLoadKey = '';
+      let firstLoadDone = false;
+      async function getWeekMeta() {
+        try { currentMeta = await fetchJSON('/api/weekmeta'); }
+        catch {}
+      }
+      function isPastSelection(y, w) {
+        y = Number(y); w = Number(w);
+        if (y < currentMeta.year) return true;
+        if (y > currentMeta.year) return false;
+        return w < currentMeta.week;
+      }
+      async function loadWeek(params) {
+        if (Number(params.seasontype) === 3) { renderTBA(); return; }
+        const key = `${params.year}-${params.seasontype}-${params.week}`;
+        if (key !== currentLoadKey) {
+          currentLoadKey = key;
+          firstLoadDone = false;
+        }
+        const qs = new URLSearchParams(params);
+        const data = await fetchJSON('/api/scores?' + qs.toString());
+        const past = isPastSelection(params.year, params.week);
+        if (past) {
+          try {
+            await fetchJSON(`/api/weeks/${params.year}/${params.week}/ingest?score=true`, {method:'POST'});
+          } catch {}
+        }
+        const useOnlyTop = past || firstLoadDone;
+        renderScores(data, useOnlyTop);
+        if (!past && !firstLoadDone) {
+          firstLoadDone = true;
+        }
+        pill.textContent = `${params.seasontype==1?'Pre':'Reg'} • Week ${params.week} • ${params.year}`;
+      }
+
+      // ----------------- Init -----------------
+      async function init() {
+        await getWeekMeta();
+        applySeasonWeekLimits();
+        try {
+          const meta = await fetchJSON('/api/weekmeta');
+          const year = Number(meta.year)||currentYear;
+          let week = Number(meta.week)||4;
+          let st = (week<=3)?1:((week<=21)?2:3);
+          typeSel.value = String(st);
+          applySeasonWeekLimits();
+          if (st===3) { renderTBA(); return; }
+          if (st===1) week=Math.min(Math.max(week,1),3);
+          if (st===2) week=Math.min(Math.max(week,4),21);
+          yearSel.value=String(year); weekSel.value=String(week);
+          await loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});
+        } catch {
+          typeSel.value='2'; applySeasonWeekLimits();
+          yearSel.value=String(currentYear); weekSel.value='4';
+          await loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});
+        }
+      }
+      typeSel.addEventListener('change', ()=>{
+        applySeasonWeekLimits();
+        if(Number(typeSel.value)===3) renderTBA(); else loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value});
       });
+      loadBtn.addEventListener('click', ()=>loadWeek({year:yearSel.value,seasontype:typeSel.value,week:weekSel.value}));
+      // Auto-refresh now respects firstLoadDone: only reload top performers when not recomputing
+      setInterval(() => {
+        if(Number(typeSel.value)!==3) {
+          const params = {year: yearSel.value, seasontype: typeSel.value, week: weekSel.value};
+          // Do not reset firstLoadDone; treat auto refresh as subsequent refreshes
+          loadWeek(params);
+        }
+      }, 10000);
+      init();
     </script>
   </body>
 </html>
